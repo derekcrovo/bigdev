@@ -1,0 +1,78 @@
+---
+# Tasks for installing Tailscale
+
+- name: Check Tailscale status
+  command: systemctl status tailscaled
+  register: tailscale_status
+  ignore_errors: yes
+
+- name: Set up Tailscale
+  block:
+  - name: Import Tailscale repo key
+    apt_key:
+      url: https://pkgs.tailscale.com/stable/ubuntu/bionic.gpg
+
+  - name: Install Tailscale repo
+    apt_repository:
+      repo: deb https://pkgs.tailscale.com/stable/ubuntu bionic main
+      filename: tailscale
+
+  - name: Install Tailscale
+    apt:
+      name: tailscale={{ tailscale_version }}
+      # deb: https://tailscale.com/files/dist/tailscale-relay_0.94-236_amd64.deb
+
+  - name: Make Tailscale directory
+    file:
+      path: /var/lib/tailscale
+      state: directory
+
+  - name: Configure Tailscale
+    shell: /usr/bin/tailscale up > /tmp/login.txt 2>&1
+    async: 300
+    poll: 0
+    register: tailscale_login
+
+  - name: Capture authentication URL
+    shell: grep login.tailscale.com /tmp/login.txt
+    register: auth_url
+    until: auth_url.stdout.find('login.tailscale.com') != -1
+    retries: 5
+
+  - name: Display auth URL
+    debug:
+      msg: Authenticate the new host at {{ auth_url.stdout | trim }}
+
+  - name: Open auth URL in browser
+    local_action:
+      module: command open {{ auth_url.stdout | trim }}
+    become: false
+
+  - name: Wait for host to be authenticated
+    async_status:
+      jid: "{{ tailscale_login.ansible_job_id }}"
+    register: login_result
+    until: login_result.finished
+    retries: 20
+    delay: 10
+
+  - name: Launch Tailscale
+    service:
+      name: tailscaled
+      state: started
+  when: tailscale_status.rc != 0
+
+- name: Capture Tailscale IP address
+  shell: ip addr show tailscale0 | grep -Po 'inet \K[\d.]+'
+  register: tailscale_ip
+
+- name: Display Tailscale IP
+  debug:
+    msg: Your new IP is {{ tailscale_ip.stdout }}
+
+- name: Add IP to /etc/hosts
+  local_action:
+    module: lineinfile
+    path: /etc/hosts
+    line: "{{ tailscale_ip.stdout }}\tbigdev"
+    regexp: 'bigdev$'

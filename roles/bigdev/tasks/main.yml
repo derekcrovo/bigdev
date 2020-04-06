@@ -1,0 +1,42 @@
+---
+# Tasks for big dev instance
+
+- name: Configure hostname
+  hostname:
+    name: bigdev
+    use: debian
+
+- name: Update Ubuntu
+  apt:
+    upgrade: yes
+    update-cache: yes
+    cache_valid_time: 86400 # One day
+
+- name: Install docker
+  package:
+    name: docker.io
+    state: present
+
+- name: Allow ubuntu to use Docker
+  user:
+    name: ubuntu
+    append: true
+    groups: docker
+
+- name: Install kind
+  get_url:
+    url: https://github.com/kubernetes-sigs/kind/releases/download/{{ kind_version }}/kind-Linux-amd64
+    dest: /usr/local/bin/kind
+    mode: 755
+
+- name: Get latest stable version of Kubernetes
+  uri:
+    url: https://storage.googleapis.com/kubernetes-release/release/stable.txt
+    return_content: yes
+  register: k8s_version
+
+- name: Install kubectl
+  get_url:
+    url: https://storage.googleapis.com/kubernetes-release/release/{{ k8s_version.content | trim }}/bin/linux/amd64/kubectl
+    dest: /usr/local/bin/kubectl
+    mode: 755

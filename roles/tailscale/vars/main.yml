@@ -1,0 +1,4 @@
+---
+# Tailscale variables
+
+tailscale_version: 0.97.0~45

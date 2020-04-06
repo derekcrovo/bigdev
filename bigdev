@@ -1,0 +1,122 @@
+#!/bin/bash
+
+## Expected variables
+# AWS_ACCESS_KEY_ID
+# AWS_SECRET_ACCESS_KEY
+# AWS_DEFAULT_REGION
+# TF_VAR_aws_default_az
+# TF_VAR_ssh_key
+# TF_STATE
+
+check_prereqs() {
+  if [[ -z $(command -v terraform) ]]; then
+    echo "terraform must be installed"
+    exit 1
+  fi
+  if [[ -z $(command -v ansible) ]]; then
+    echo "ansible must be installed"
+    exit 1
+  fi
+  if [[ -z $(command -v terraform-inventory) ]]; then
+    echo "terraform-inventory must be installed"
+    exit 1
+  fi
+# shellcheck disable=SC2154
+  if [[ -z "$TF_VAR_ssh_key" ]]; then
+    echo "TF_VAR_ssh_key must be set to your private key file"
+    exit 1
+  fi
+}
+
+up() {
+  # Get the Ansible become password for the local user
+  echo "You will be prompted for your local sudo password"
+  echo "so Ansible can add the bigdev IP to /etc/hosts"
+  read -rs become_pass
+
+  # Build the infrastructure; VPC, security groups and the bigdev instance
+  terraform init
+  terraform plan -out plan
+  terraform apply -auto-approve plan
+
+  echo "Getting bigdev IP from Terraform inventory"
+  tries=10
+  while true; do
+    bigdev_ip=$(terraform-inventory -list | jq -r .bigdev[0])
+    if [[ -n "$bigdev_ip" || "$bigdev_ip" != "null" ]]; then
+      break
+    fi
+    echo -n "."
+    sleep 1
+    (( tries-- ))
+  done
+  echo
+  if [[ -z "$bigdev_ip" || "$bigdev_ip" == "null" ]]; then
+    echo "Error: Failed to find bigdev in Terraform inventory"
+    exit 1
+  fi
+
+  echo "Waiting for SSH access to bigdev at $bigdev_ip"
+  tries=10
+  ssh_result=0
+  while true; do
+    timeout 1 bash -c "cat < /dev/null > /dev/tcp/${bigdev_ip}/22" 2> /dev/null
+    ssh_result=$?
+    if [[ "$tries" == 0 || "$ssh_result" == 0 ]]; then
+      break
+    fi
+    echo -n "."
+    sleep 5
+    (( tries-- ))
+  done
+  echo
+
+  if [[ $ssh_result != 0 ]]; then
+    echo "Error: Couldn't ssh to bigdev"
+    exit 1
+  fi
+
+  mkfifo -m 600 creds.yml
+  echo "ansible_become_pass: $become_pass" > creds.yml &
+  ansible_cmd="ansible-playbook -i /usr/local/bin/terraform-inventory --user ubuntu --private-key $TF_VAR_ssh_key -e @creds.yml bigdev.yml"
+
+  if ! $ansible_cmd; then
+      echo Ansible had issues, not locking SSH
+      rm -f creds.yml
+      exit 1
+  fi
+  rm -f creds.yml
+
+  # Switch to the noaccess security group.
+  # With Tailscale we don't need open ports
+  TF_VAR_enable_ssh=false terraform plan -out plan
+
+  terraform apply -auto-approve plan
+
+  # Remove any previous ssh fingerprints for bigdev and cache its fingerprint
+  ssh-keygen -R bigdev 2> /dev/null
+  ssh-keyscan bigdev >> ~/.ssh/known_hosts 2> /dev/null
+
+  echo "Success!"
+  echo "You can now log in to bigdev with the command:"
+  echo "ssh -i $TF_VAR_ssh_key ubuntu@bigdev"
+}
+
+down() {
+  terraform destroy
+}
+
+## 
+check_prereqs
+
+case "$1" in
+  down)
+    down
+    ;;
+  up)
+    up
+    ;;
+  *)
+    echo "Usage: bigdev [up|down]"
+    exit 1
+esac

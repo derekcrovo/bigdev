@@ -1,0 +1,42 @@
+---
+# Tasks for installing Go
+
+- name: Get latest Go version string
+  uri:
+    url: https://golang.org/VERSION?m=text
+    return_content: yes
+  register: available_go_version
+
+- name: Get current Go version
+  shell: /usr/local/go/bin/go version
+  register: current_go_version
+  ignore_errors: yes
+
+- name: Download Go tarball
+  get_url:
+    url: https://dl.google.com/go/{{ available_go_version.content }}.linux-amd64.tar.gz
+    dest: /tmp/go.tar.gz
+  when: current_go_version.stdout.find(available_go_version.content) == -1
+
+- name: Untar Go tarball into place
+  unarchive:
+      src: /tmp/go.tar.gz
+      remote_src: yes
+      dest: /usr/local/
+  when: current_go_version.stdout.find(available_go_version.content) == -1
+
+- name: Cleanup Go tarball
+  file:
+    path: /tmp/go.tar.gz
+    state: absent
+
+- name: Set up Go environment
+  copy:
+    src: go.sh
+    dest: /etc/profile.d/go.sh
+
+- name: Make Go directory for ubuntu
+  file:
+    path: go
+    state: directory
+  become: no
