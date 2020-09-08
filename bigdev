@@ -30,7 +30,7 @@ check_prereqs() {
 
 up() {
   # Get the Ansible become password for the local user
-  echo "You will be prompted for your local sudo password"
+  echo "Please enter your local sudo password"
   echo "so Ansible can add the bigdev IP to /etc/hosts"
   read -rs become_pass
 

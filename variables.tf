@@ -20,15 +20,11 @@ variable "subnet_cidr" {
 }
 variable "instance_type" {
     description = "Instance type for the dev host"
-    default = "t2.xlarge"
+    default = "t2.2xlarge"
 }
 variable "root_device_size" {
     description = "Size of the root volume in GB"
     default = "100"
-}
-variable "instance_ami" {
-    description = "Instance AMI for the dev host"
-    default = "ami-04590e7389a6e577c"
 }
 
 data "aws_ami" "latest-ubuntu" {
@@ -37,7 +33,7 @@ data "aws_ami" "latest-ubuntu" {
 
     filter {
         name   = "name"
-        values = ["ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*"]
+        values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
     }
 
     filter {

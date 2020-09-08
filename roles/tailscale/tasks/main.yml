@@ -20,7 +20,6 @@
   - name: Install Tailscale
     apt:
       name: tailscale={{ tailscale_version }}
-      # deb: https://tailscale.com/files/dist/tailscale-relay_0.94-236_amd64.deb
 
   - name: Make Tailscale directory
     file:
